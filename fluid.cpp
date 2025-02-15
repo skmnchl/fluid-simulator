@@ -7,14 +7,17 @@
 #include <thread>
 
 struct Atom {
-    float pos[2];
-    float vel[2];
+    std::vector<float> pos; // {x1, y1, x2, y2, ...}
+    std::vector<float> vel; // {u1, v1, u2, v2, ...}
+    int cnt;
 
-    Atom(float x, float y, float u, float v) {
-        this->pos[0] = x;
-        this->pos[1] = y;
-        this->vel[0] = u;
-        this->vel[1] = v;
+    Atom(std::vector<float> pos, std::vector<float> vel) {
+        assert(pos.size() == vel.size());
+        assert(pos.size() % 2 == 0);
+
+        this->pos = pos;
+        this->vel = vel;
+        this->cnt = pos.size()/2;
     }
 };
 
@@ -145,7 +148,7 @@ class FlipFluid {
     private:
     int height;
     int width;
-    std::vector<Atom> atom;
+    Atom atom = Atom({},{});
     Grid grid = Grid({{Grid::CellType::AIR}});
     std::vector<int> cell_atom;
     std::vector<float> density; // grid density
@@ -162,7 +165,7 @@ class FlipFluid {
     public:
     FlipFluid(
         Grid grid, 
-        std::vector<Atom> atom,
+        Atom atom,
         float gravity,
         float dt,
         float min_dist,
@@ -204,79 +207,78 @@ class FlipFluid {
     }
 
     void simulate_atom(float gravity, float dt) {
-        for(Atom &a : atom) {
-            a.vel[1] += gravity * dt;
-            a.pos[0] += a.vel[0] * dt;
-            a.pos[1] += a.vel[1] * dt;
+        for(int a=0;a<atom.cnt;a++) {
+            atom.vel[a*2 + 1] += gravity * dt;
+            atom.pos[a*2] += atom.vel[a*2] * dt;
+            atom.pos[a*2 + 1] += atom.vel[a*2 + 1] * dt;
         }
     }
 
-    void push_atoms_apart(float min_dist, int num_iter) {
-        // use grid method
-        // divide each atom into grid
-        reset_cell_atom();
-        // consider near 9 cells
-        for(int i=0;i<atom.size();i++) {
-            Atom a = atom[i];
-            int a_x = floor(a.pos[0]);
-            int a_y = floor(a.pos[1]);
-            int cell_x[3] = {a_x-1, a_x, a_x+1};
-            int cell_y[3] = {a_y-1, a_y, a_y+1};
-            for(int i=0;i<3;i++) {
-                for(int j=0;j<3;j++) {
-                    if (cell_x[j]<0 || cell_x[j]>=width || cell_y[i]<0 || cell_y[i]>=height)
-                        continue;
-                    // int &idx = cell_atom[cell_y[i]][cell_x[j]][0];
-                    // cell_atom[cell_y[i]][cell_x[j]][idx] = i;
-                    int &idx = cell_atom[(cell_y[i]*height + cell_x[j])*width];
-                    cell_atom[(cell_y[i]*height + cell_x[j])*width + idx] = i;
-                    idx += 1;
-                }
-            }
-        }
+    // void push_atoms_apart(float min_dist, int num_iter) {
+    //     // use grid method
+    //     // divide each atom into grid
+    //     reset_cell_atom();
+    //     // consider near 9 cells
+    //     for(int i=0;i<atom.cnt;i++) {
+    //         int a_x = floor(atom.pos[i*2]);
+    //         int a_y = floor(atom.pos[i+2 + 1]);
+    //         int cell_x[3] = {a_x-1, a_x, a_x+1};
+    //         int cell_y[3] = {a_y-1, a_y, a_y+1};
+    //         for(int i=0;i<3;i++) {
+    //             for(int j=0;j<3;j++) {
+    //                 if (cell_x[j]<0 || cell_x[j]>=width || cell_y[i]<0 || cell_y[i]>=height)
+    //                     continue;
+    //                 // int &idx = cell_atom[cell_y[i]][cell_x[j]][0];
+    //                 // cell_atom[cell_y[i]][cell_x[j]][idx] = i;
+    //                 int &idx = cell_atom[(cell_y[i]*height + cell_x[j])*width];
+    //                 cell_atom[(cell_y[i]*height + cell_x[j])*width + idx] = i;
+    //                 idx += 1;
+    //             }
+    //         }
+    //     }
 
-        for(int iter=0;iter<num_iter;iter++) {
-            // consider near 9 cells
-            for(int i=0;i<height;i++) {
-                for(int j=0;j<width;j++) {
-                    // see if atoms collide in each cell
-                    // int idx = cell_atom[i][j][0];
-                    int idx = cell_atom[(i*height + j)*width];
-                    for(int p=0;p<idx;p++) {
-                        for(int q=p+1;q<idx;q++) {
-                            Atom &a1 = atom[p];
-                            Atom &a2 = atom[q];
-                            float dist = sqrt(pow(a1.pos[0]-a2.pos[0],2)+pow(a1.pos[1]-a2.pos[1],2));
-                            if (dist < min_dist) {
-                                float mid_x = (a1.pos[0]+a2.pos[0]) / 2;
-                                float mid_y = (a1.pos[1]+a2.pos[1]) / 2;
+    //     for(int iter=0;iter<num_iter;iter++) {
+    //         // consider near 9 cells
+    //         for(int i=0;i<height;i++) {
+    //             for(int j=0;j<width;j++) {
+    //                 // see if atoms collide in each cell
+    //                 // int idx = cell_atom[i][j][0];
+    //                 int idx = cell_atom[(i*height + j)*width];
+    //                 for(int p=0;p<idx;p++) {
+    //                     for(int q=p+1;q<idx;q++) {
+    //                         Atom &a1 = atom[p];
+    //                         Atom &a2 = atom[q];
+    //                         float dist = sqrt(pow(a1.pos[0]-a2.pos[0],2)+pow(a1.pos[1]-a2.pos[1],2));
+    //                         if (dist < min_dist) {
+    //                             float mid_x = (a1.pos[0]+a2.pos[0]) / 2;
+    //                             float mid_y = (a1.pos[1]+a2.pos[1]) / 2;
 
-                                if (dist == 0) {
-                                    continue;
-                                }
+    //                             if (dist == 0) {
+    //                                 continue;
+    //                             }
 
-                                a1.pos[0] = (a1.pos[0]-mid_x) * min_dist / dist;
-                                a2.pos[0] = (a2.pos[0]-mid_x) * min_dist / dist;
-                                a1.pos[1] = (a1.pos[1]-mid_y) * min_dist / dist;
-                                a2.pos[1] = (a2.pos[1]-mid_y) * min_dist / dist;
-                            }
-                        }
-                    }
+    //                             a1.pos[0] = (a1.pos[0]-mid_x) * min_dist / dist;
+    //                             a2.pos[0] = (a2.pos[0]-mid_x) * min_dist / dist;
+    //                             a1.pos[1] = (a1.pos[1]-mid_y) * min_dist / dist;
+    //                             a2.pos[1] = (a2.pos[1]-mid_y) * min_dist / dist;
+    //                         }
+    //                     }
+    //                 }
 
-                }
-            }
-        }
-    }
+    //             }
+    //         }
+    //     }
+    // }
 
     void handle_atom_collisions(float min_dist) {
-        for(Atom &a : atom) {
-            if (a.pos[0] <= min_dist+1 || a.pos[0] >= width-min_dist-1) {
-                a.pos[0] = a.pos[0]>width/2 ? width-min_dist-1 : min_dist+1;
-                a.vel[0] = 0;
+        for(int a=0;a<atom.cnt;a++) {
+            if (atom.pos[a*2] <= min_dist+1 || atom.pos[a*2] >= width-min_dist-1) {
+                atom.pos[a*2] = atom.pos[a*2]>width/2 ? width-min_dist-1 : min_dist+1;
+                atom.vel[a*2] = 0;
             }
-            if (a.pos[1] <= min_dist+1 || a.pos[1] >= height-min_dist-1) {
-                a.pos[1] = a.pos[1]>height/2 ? height-min_dist-1 : min_dist+1;
-                a.vel[1] = 0;
+            if (atom.pos[a*2 + 1] <= min_dist+1 || atom.pos[a*2 + 1] >= height-min_dist-1) {
+                atom.pos[a*2 + 1] = atom.pos[a*2 + 1]>height/2 ? height-min_dist-1 : min_dist+1;
+                atom.vel[a*2 + 1] = 0;
             }
         }
     }
@@ -286,9 +288,9 @@ class FlipFluid {
         grid.reset_cell();
 
         // set cell that has atom as liquid
-        for(Atom a : atom) {
-            int x_cell = floor(a.pos[0]);
-            int y_cell = floor(a.pos[1]);
+        for(int a=0;a<atom.cnt;a++) {
+            int x_cell = floor(atom.pos[a*2]);
+            int y_cell = floor(atom.pos[a*2 + 1]);
             if (x_cell < 0 || x_cell >= width || y_cell < 0 || y_cell >= height)
                 continue;
             if (grid.cell[y_cell*width+x_cell] == Grid::CellType::SOLID)
@@ -313,10 +315,10 @@ class FlipFluid {
         for(int d=0;d<2;d++) {
             grid.reset_r();
 
-            for(Atom &a : atom) {
+            for(int a=0;a<atom.cnt;a++) {
                 // assume cell height is 1
-                float x_p = a.pos[0] - offset[d][0];
-                float y_p = a.pos[1] - offset[d][1];
+                float x_p = atom.pos[a*2] - offset[d][0];
+                float y_p = atom.pos[a*2 + 1] - offset[d][1];
                 int x_cell = floor(x_p); // x direction cell number of atom
                 int y_cell = floor(y_p); // y direction cell number of atom
                 float dx = x_p - x_cell; // atom x in particular cell
@@ -333,7 +335,7 @@ class FlipFluid {
                         if (y_cell+i<0 || y_cell+i>=height || x_cell+j<0 || x_cell+j>=width)
                             continue;
                         
-                        grid.vel[d][(y_cell+i)*(width+1-d)+x_cell+j] += weight[i][j] * a.vel[d];
+                        grid.vel[d][(y_cell+i)*(width+1-d)+x_cell+j] += weight[i][j] * atom.vel[a*2 + d];
                         grid.r[(y_cell+i)*(width+1)+x_cell+j] += weight[i][j];
                     }
                 }
@@ -357,9 +359,9 @@ class FlipFluid {
         reset_density();
         // assume cell height is 1
         float offset = 0.5;
-        for(Atom a : atom) {
-            float x_p = a.pos[0]-offset;
-            float y_p = a.pos[1]-offset;
+        for(int a=0;a<atom.cnt;a++) {
+            float x_p = atom.pos[a*2]-offset;
+            float y_p = atom.pos[a*2 + 1]-offset;
             int x_cell = floor(x_p); // x direction cell number of atom
             int y_cell = floor(y_p); // y direction cell number of atom
             float dx = x_p - x_cell; // atom x in particular cell
@@ -417,10 +419,10 @@ class FlipFluid {
 
         // d points vel
         for(int d=0;d<2;d++) {    
-            for(Atom &a : atom) {
+            for(int a=0;a<atom.cnt;a++) {
                 // assume cell height is 1
-                float x_p = a.pos[0] - offset[d][0];
-                float y_p = a.pos[1] - offset[d][1];
+                float x_p = atom.pos[a*2] - offset[d][0];
+                float y_p = atom.pos[a*2 + 1] - offset[d][1];
                 int x_cell = floor(x_p); // x direction cell number of atom
                 int y_cell = floor(y_p); // y direction cell number of atom
                 float dx = x_p - x_cell; // atom x in particular cell
@@ -445,7 +447,7 @@ class FlipFluid {
                     }
                 }
                 float quantity = numerator / denominator;
-                a.vel[d] += quantity;
+                atom.vel[a*2 + d] += quantity;
             }
         }
     }
@@ -496,7 +498,7 @@ int main() {
 
     // int height=40, width=50;
     // int height = 12, width = 12;
-    int height = 400, width = 120;
+    int height = 80, width = 120;
 
     // make basic box type grid
     std::vector<std::vector<Grid::CellType>> init_cell;
@@ -509,20 +511,24 @@ int main() {
         init_cell[0][i] = Grid::CellType::SOLID;
         init_cell[height-1][i] = Grid::CellType::SOLID;
     }
-
     Grid grid = Grid(init_cell);
 
     // make half filled atoms
-    std::vector<Atom> atom;
+    std::vector<float> pos;
+    std::vector<float> vel;
     for(int i=2;i<(height-2)*3/4;i++) {
         for(int j=2;j<width*3/4;j++) {
             float x = j;//+width/4;
             float y = height/4+i-2;
-            float u=0, v=0;
-            Atom a = Atom(x, y, u, v);
-            atom.push_back(a);
+            float u = 0;
+            float v = 0;
+            pos.push_back(x);
+            pos.push_back(y);
+            vel.push_back(u);
+            vel.push_back(v);
         }
     }
+    Atom atom = Atom(pos, vel);
 
     // other configs
     float gravity = 50;
