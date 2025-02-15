@@ -6,20 +6,6 @@
 #include <chrono>
 #include <thread>
 
-// return random float between 0 and 1
-class RNG {
-    public:
-    RNG() {
-        srand (static_cast <unsigned> (time(0)));
-    }
-
-    float get_rand_float() {
-        float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-        return r;
-    }
-
-};
-
 struct Atom {
     float pos[2];
     float vel[2];
@@ -42,11 +28,11 @@ class Grid {
 
     int height;
     int width;
-    std::vector<std::vector<CellType>> cell;
-    std::vector<std::vector<float>> vel[2]; // grid velocity
-    std::vector<std::vector<float>> prev_vel[2]; // grid previous velocity
-    std::vector<std::vector<bool>> s;
-    std::vector<std::vector<float>> r;
+    std::vector<CellType> cell;
+    std::vector<float> vel[2]; // grid velocity
+    std::vector<float> prev_vel[2]; // grid previous velocity
+    std::vector<bool> s;
+    std::vector<float> r;
 
     Grid(std::vector<std::vector<Grid::CellType>> cell) {
         assert(cell.size() > 0 && cell[0].size() > 0);
@@ -54,23 +40,28 @@ class Grid {
         // init grid size
         this->height = cell.size();
         this->width = cell[0].size();
-        this->cell = cell;
+        this->cell.resize(width * height);
+        for(int i=0;i<height;i++) {
+            for(int j=0;j<width;j++) {
+                this->cell[i * width + j] = cell[i][j];
+            }
+        }
         
         // init grid velocity
-        this->vel[0].resize(height, std::vector<float>(width+1));
-        this->vel[1].resize(height+1, std::vector<float>(width));
-        this->prev_vel[0].resize(height, std::vector<float>(width+1));
-        this->prev_vel[1].resize(height+1, std::vector<float>(width));
+        this->vel[0].resize(height * (width+1));
+        this->vel[1].resize((height+1) * width);
+        this->prev_vel[0].resize(height * (width+1));
+        this->prev_vel[1].resize((height+1) * width);
 
         // init others
-        this->r.resize(height+1, std::vector<float>(width+1, 0));
-        this->s.resize(height, std::vector<bool>(width));
+        this->r.resize((height+1) * (width+1));
+        this->s.resize(height * width);
         for(int i=0;i<height;i++) {
             for(int j=0;j<width;j++) {
                 if (cell[i][j] == Grid::CellType::SOLID)
-                    s[i][j] = false;
+                    s[i*width+j] = false;
                 else
-                    s[i][j] = true;
+                    s[i*width+j] = true;
             }
         }
 
@@ -79,8 +70,8 @@ class Grid {
     void reset_cell() {
         for(int i=0;i<height;i++) {
             for(int j=0;j<width;j++) {
-                if (cell[i][j] != Grid::CellType::SOLID)
-                    cell[i][j] = Grid::CellType::AIR;
+                if (cell[i*width+j] != Grid::CellType::SOLID)
+                    cell[i*width+j] = Grid::CellType::AIR;
             }
         }
     }
@@ -88,20 +79,18 @@ class Grid {
     void reset_velocity() {
         for(int d=0;d<2;d++)
             for(int i=0;i<vel[d].size();i++)
-                for(int j=0;j<vel[d][0].size();j++)
-                    vel[d][i][j] = 0;
+                vel[d][i] = 0;
     }
 
     void reset_r() {
         for(int i=0;i<r.size();i++)
-            for(int j=0;j<r[0].size();j++)
-                r[i][j] = 0;
+            r[i] = 0;
     }
 
     void print_grid() {
         for(int i=0;i<height;i++) {
             for(int j=0;j<width;j++) {
-                switch (cell[i][j]) {
+                switch (cell[i*width+j]) {
                     case Grid::CellType::SOLID:
                         std::cout << "■ ";
                         break;
@@ -122,28 +111,28 @@ class Grid {
         for(int i=0;i<height*2+1;i++) {
             for(int j=0;j<width+1;j++) {
                 if (i%2==0 && j<width) {
-                    if (vel[1][i/2][j] >= 0) {
+                    if (vel[1][i/2*width+j] >= 0) {
                         std::cout.precision(2);
                         std::cout << std::fixed;
                     } else {
                         std::cout.precision(1);
                         std::cout << std::fixed;
                     }
-                    std::cout << "    " << vel[1][i/2][j];
+                    std::cout << "    " << vel[1][i/2*width+j];
                 }
                 else if (i%2==1 && i/2<height) {
-                    if (vel[0][i/2][j] >= 0) {
+                    if (vel[0][i/2*(width+1)+j] >= 0) {
                         std::cout.precision(2);
                         std::cout << std::fixed;
                     } else {
                         std::cout.precision(1);
                         std::cout << std::fixed;
                     }
-                    std::cout << vel[0][i/2][j];
+                    std::cout << vel[0][i/2*(width+1)+j];
                     if (i/2>=height || j>=width)
                         continue;
-                    if (cell[i/2][j] == Grid::CellType::LIQUID) std::cout << "□ □ ";
-                    else if (cell[i/2][j] == Grid::CellType::SOLID) std::cout << "■ ■ ";
+                    if (cell[i/2*width+j] == Grid::CellType::LIQUID) std::cout << "□ □ ";
+                    else if (cell[i/2*width+j] == Grid::CellType::SOLID) std::cout << "■ ■ ";
                     else std::cout << "    ";
                 }
             }
@@ -158,8 +147,8 @@ class FlipFluid {
     int width;
     std::vector<Atom> atom;
     Grid grid = Grid({{Grid::CellType::AIR}});
-    std::vector<std::vector<std::vector<int>>> cell_atom;
-    std::vector<std::vector<float>> density; // grid density
+    std::vector<int> cell_atom;
+    std::vector<float> density; // grid density
 
     float gravity;
     float dt;
@@ -192,8 +181,8 @@ class FlipFluid {
         this->atom = atom;
 
         // init others
-        this->cell_atom.resize(height, std::vector<std::vector<int>>(width, std::vector<int>(10)));
-        this->density.resize(height, std::vector<float>(width));
+        this->cell_atom.resize(height * width * 10);
+        this->density.resize(height * width);
         this->gravity = gravity;
         this->dt = dt;
         this->min_dist = min_dist;
@@ -206,15 +195,12 @@ class FlipFluid {
 
     void reset_cell_atom() {
         for(int i=0;i<cell_atom.size();i++)
-            for(int j=0;j<cell_atom[0].size();j++)
-                for(int t=0;t<10;t++)
-                    cell_atom[i][j][t] = 0;
+            cell_atom[i] = 0;
     }
 
     void reset_density() {
         for(int i=0;i<density.size();i++)
-            for(int j=0;j<density[0].size();j++)
-                density[i][j] = 0;
+            density[i] = 0;
     }
 
     void simulate_atom(float gravity, float dt) {
@@ -226,7 +212,6 @@ class FlipFluid {
     }
 
     void push_atoms_apart(float min_dist, int num_iter) {
-        RNG rng;
         // use grid method
         // divide each atom into grid
         reset_cell_atom();
@@ -241,8 +226,10 @@ class FlipFluid {
                 for(int j=0;j<3;j++) {
                     if (cell_x[j]<0 || cell_x[j]>=width || cell_y[i]<0 || cell_y[i]>=height)
                         continue;
-                    int &idx = cell_atom[cell_y[i]][cell_x[j]][0];
-                    cell_atom[cell_y[i]][cell_x[j]][idx] = i;
+                    // int &idx = cell_atom[cell_y[i]][cell_x[j]][0];
+                    // cell_atom[cell_y[i]][cell_x[j]][idx] = i;
+                    int &idx = cell_atom[(cell_y[i]*height + cell_x[j])*width];
+                    cell_atom[(cell_y[i]*height + cell_x[j])*width + idx] = i;
                     idx += 1;
                 }
             }
@@ -253,7 +240,8 @@ class FlipFluid {
             for(int i=0;i<height;i++) {
                 for(int j=0;j<width;j++) {
                     // see if atoms collide in each cell
-                    int idx = cell_atom[i][j][0];
+                    // int idx = cell_atom[i][j][0];
+                    int idx = cell_atom[(i*height + j)*width];
                     for(int p=0;p<idx;p++) {
                         for(int q=p+1;q<idx;q++) {
                             Atom &a1 = atom[p];
@@ -303,10 +291,10 @@ class FlipFluid {
             int y_cell = floor(a.pos[1]);
             if (x_cell < 0 || x_cell >= width || y_cell < 0 || y_cell >= height)
                 continue;
-            if (grid.cell[y_cell][x_cell] == Grid::CellType::SOLID)
+            if (grid.cell[y_cell*width+x_cell] == Grid::CellType::SOLID)
                 continue;
 
-            grid.cell[y_cell][x_cell] = Grid::CellType::LIQUID;
+            grid.cell[y_cell*width+x_cell] = Grid::CellType::LIQUID;
         }
     }
 
@@ -345,19 +333,19 @@ class FlipFluid {
                         if (y_cell+i<0 || y_cell+i>=height || x_cell+j<0 || x_cell+j>=width)
                             continue;
                         
-                        grid.vel[d][y_cell+i][x_cell+j] += weight[i][j] * a.vel[d];
-                        grid.r[y_cell+i][x_cell+j] += weight[i][j];
+                        grid.vel[d][(y_cell+i)*(width+1-d)+x_cell+j] += weight[i][j] * a.vel[d];
+                        grid.r[(y_cell+i)*(width+1)+x_cell+j] += weight[i][j];
                     }
                 }
             }
 
             // grid.print_grid_status("\n\nbefore dividing with r\n");
 
-            for(int i=0;i<grid.vel[d].size();i++) {
-                for(int j=0;j<grid.vel[d][0].size();j++) {
-                    if (grid.r[i][j] == 0)
+            for(int i=0;i<height+d;i++) {
+                for(int j=0;j<width+1-d;j++) {
+                    if (grid.r[i*(width+1)+j] == 0)
                         continue;
-                    grid.vel[d][i][j] /= grid.r[i][j];
+                    grid.vel[d][i*(width+1-d)+j] /= grid.r[i*(width+1)+j];
                 }
             }
 
@@ -387,7 +375,7 @@ class FlipFluid {
                 for(int j=0;j<2;j++) {
                     if (y_cell+i<0 || y_cell+i>=height || x_cell+j<0 || x_cell+j>=width)
                         continue;
-                    density[y_cell+i][x_cell+j] += weight[i][j];
+                    density[(y_cell+i)*width+x_cell+j] += weight[i][j];
                 }
             }
         }
@@ -397,24 +385,24 @@ class FlipFluid {
         for(int iter=0;iter<num_iter;iter++) {
             for(int i=0;i<height;i++) {
                 for(int j=0;j<width;j++) {
-                    if (grid.cell[i][j] != Grid::CellType::LIQUID)
+                    if (grid.cell[i*width+j] != Grid::CellType::LIQUID)
                         continue;
-                    float divergence = grid.vel[0][i][j+1] - grid.vel[0][i][j] + grid.vel[1][i+1][j] - grid.vel[1][i][j];
+                    float divergence = grid.vel[0][i*(width+1)+j+1] - grid.vel[0][i*(width+1)+j] + grid.vel[1][(i+1)*width+j] - grid.vel[1][i*width+j];
                     divergence *= over_relaxation;
-                    if (density[i][j] > 0)
-                        divergence -= stiff*(density[i][j] - rest_density);
-                    int s1 = grid.s[i][j-1];
-                    int s2 = grid.s[i][j+1];
-                    int s3 = grid.s[i-1][j];
-                    int s4 = grid.s[i+1][j];
+                    if (density[i*width+j] > 0)
+                        divergence -= stiff*(density[i*width+j] - rest_density);
+                    int s1 = grid.s[i*width+j-1];
+                    int s2 = grid.s[i*width+j+1];
+                    int s3 = grid.s[(i-1)*width+j];
+                    int s4 = grid.s[(i+1)*width+j];
                     int s = s1+s2+s3+s4;
 
                     if (s == 0)
                         continue;
-                    grid.vel[0][i][j] += divergence * s1 / s;
-                    grid.vel[0][i][j+1] -= divergence * s2 / s;
-                    grid.vel[1][i][j] += divergence * s3 / s;
-                    grid.vel[1][i+1][j] -= divergence * s4 / s;
+                    grid.vel[0][i*(width+1)+j] += divergence * s1 / s;
+                    grid.vel[0][i*(width+1)+j+1] -= divergence * s2 / s;
+                    grid.vel[1][i*width+j] += divergence * s3 / s;
+                    grid.vel[1][(i+1)*width+j] -= divergence * s4 / s;
                 }
             }
         }
@@ -449,8 +437,8 @@ class FlipFluid {
                     for(int j=0;j<2;j++) {
                         if (y_cell+i<0 || y_cell+i>=height || x_cell+j<0 || x_cell+j>=width)
                             continue;
-                        float q_curr = grid.vel[d][y_cell+i][x_cell+j];
-                        float q_prev = grid.prev_vel[d][y_cell+i][x_cell+j];
+                        float q_curr = grid.vel[d][(y_cell+i)*(width+1-d)+x_cell+j];
+                        float q_prev = grid.prev_vel[d][(y_cell+i)*(width+1-d)+x_cell+j];
                         // add difference of component to atom
                         numerator += (q_curr-q_prev)*weight[i][j];
                         denominator += weight[i][j];
@@ -468,7 +456,7 @@ class FlipFluid {
         // simulate particles
         simulate_atom(gravity, dt);
 
-        push_atoms_apart(min_dist, pushapart_iteration);
+        // push_atoms_apart(min_dist, pushapart_iteration);
         handle_atom_collisions(min_dist);
 
         // grid.print_grid_status("\n\ninit grid:\n");
@@ -484,7 +472,7 @@ class FlipFluid {
 
         // save current grid velocity
         for(int d=0;d<2;d++)
-            grid.prev_vel[d].assign(grid.vel[d].begin(), grid.vel[d].end());
+            grid.prev_vel[d] = grid.vel[d];
         
         // make fluid incompressible
         // using Gauss-Seidal method
