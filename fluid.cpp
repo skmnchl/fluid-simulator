@@ -37,7 +37,7 @@ class Grid {
     std::vector<float> prev_vel[3]; // previous velocity value for each grid cell
     std::vector<bool> s; // true if fluid can be filled (=false if cell type is solid)
     std::vector<float> r[3]; // total sum of weights
-    std::vector<bool> screen;
+    std::vector<CellType> screen;
 
     Grid(std::vector<std::vector<std::vector<Grid::CellType>>> cell) {
         // grid should be 3D nonempty vector
@@ -99,7 +99,6 @@ class Grid {
                 }
             }
         }
-        this->screen.resize(x_size * y_size * 2);
     }
 
     // print grid cross-section in the cut direction according to the given direction
@@ -170,37 +169,52 @@ class Grid {
         }
     }
 
-    // print 3d atoms projected to 2d screen
-    void print_screen() {
-        // init screen
-        for(int i=0;i<screen.size();i++) {
-            screen[i] = false;
+    // print 3d atoms projected to 2d screen with given screen size, offset and scale
+    void print_screen(int screen_width, int screen_height, int x_offset, int y_offset, float scale) {
+        // resize screen
+        if (screen_width * screen_height != screen.size()) {
+            screen.resize(screen_width * screen_height);
         }
 
-        // offset at screen
-        int x_offset = x_size;
-        int y_offset = y_size;
+        // init screen
+        for(int i=0;i<screen.size();i++) {
+            screen[i] = Grid::CellType::AIR;
+        }
 
         for(int i=0;i<x_size;i++) {
             for(int j=0;j<y_size;j++) {
                 for(int k=0;k<z_size;k++) {
+                    float y = -0.5*(i+k) + j;
+                    float x = -0.86602540378*(k-i); // sqrt(3)/2 * (k-i)
+                    int yi = y_offset + floor(y*scale);
+                    int xi = x_offset + floor(x*scale);
+                    if (((i==0 || i==x_size-1) && (j==0 || j==y_size-1))
+                     || ((j==0 || j==y_size-1) && (k==0 || k==z_size-1))
+                     || ((k==0 || k==z_size-1) && (i==0 || i==x_size-1))) {
+                        screen[yi*screen_width + xi] = Grid::CellType::SOLID;
+                    }
+
                     if (cell[(i*y_size + j)*z_size + k] == Grid::CellType::LIQUID) {
-                        float y = -0.5*(i+j) + k;
-                        float x = -0.86602540378*(j-i);
-                        int yi = y_offset + floor(y);
-                        int xi = x_offset + floor(x);
-                        screen[yi*2*z_size + xi] = true;
+                        if (screen[yi*screen_width + xi] == Grid::CellType::AIR)
+                            screen[yi*screen_width + xi] = Grid::CellType::LIQUID;
                     }
                 }
             }
         }
 
-        for(int i=0;i<x_size*2;i++) {
-            for(int j=0;j<y_size*2;j++) {
-                if (screen[i*2*x_size + j])
-                    std::cout << "■ ";
-                else
-                    std::cout << "  ";
+        for(int i=0;i<screen_height;i++) {
+            for(int j=0;j<screen_width;j++) {
+                switch (screen[i*screen_width+j]) {
+                    case Grid::CellType::SOLID:
+                        std::cout << "■ ";
+                        break;
+                    case Grid::CellType::LIQUID:
+                        std::cout << "□ ";
+                        break;
+                    case Grid::CellType::AIR:
+                        std::cout << "  ";
+                        break;
+                }
             }
             std::cout << '\n';
         }
@@ -698,9 +712,8 @@ class FlipFluid {
         transfer_velocity_to_atom();
     }
 
-    void print_fluid() {
-        grid.print_grid(1);
-        // grid.print_screen();
+    void print_fluid(int screen_width, int screen_height, int offset_x, int offset_y, float scale) {
+        grid.print_screen(screen_width, screen_height, offset_x, offset_y, scale);
     }
 };
 
@@ -789,8 +802,7 @@ int main() {
         auto start = std::chrono::high_resolution_clock::now(); // start time
     
         fluid.update();
-        fluid.print_fluid();
-        // std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        fluid.print_fluid(100, 60, 50, 40, 0.4);
 
         auto end = std::chrono::high_resolution_clock::now(); // end time
         std::chrono::duration<double> duration = end - start; // compute duration
