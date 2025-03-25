@@ -592,11 +592,11 @@ class FlipFluid {
                 incompress_counter[i-1] = thread_idx + 1;
             }
         }
-
     }
 
     // make fluid incompressible using multi-threading 
     // thread pipelined per layer
+    // TODO: handle num_iter properly using thread pooling
     void solve_incompressibility(int num_iter, float over_relaxation, float stiff, float rest_density) {
         // reset incompress_counter
         for(int i=0;i<incompress_counter.size();i++)
@@ -609,6 +609,44 @@ class FlipFluid {
 
         for (auto& t : threads) {
             t.join();
+        }
+    }
+
+    // single thread version of solve_incompressibility
+    void solve_incompressibility_single_thread(int num_iter, float over_relaxation, float stiff, float rest_density) {
+        for(int iter=0;iter<num_iter;iter++) {
+            for(int i=0;i<x_size;i++) {
+                for(int j=0;j<y_size;j++) {
+                    for(int k=0;k<z_size;k++) {
+                        if (grid.cell[(i*y_size + j)*z_size + k] != Grid::CellType::LIQUID) // only consider liquid type cell
+                            continue;
+
+                        float divergence = grid.vel[0][((i+1)*y_size + j)*z_size + k] - grid.vel[0][(i*y_size + j)*z_size + k]
+                                         + grid.vel[1][(i*(y_size+1) + j+1)*z_size + k] - grid.vel[1][(i*(y_size+1) + j)*z_size + k]
+                                         + grid.vel[2][(i*y_size + j)*(z_size+1) + k+1] - grid.vel[2][(i*y_size + j)*(z_size+1) + k];
+                        divergence *= over_relaxation;
+                        if (density[(i*y_size + j)*z_size + k] > 0)
+                            divergence -= stiff*(density[(i*y_size + j)*z_size + k] - rest_density);
+
+                        bool s1 = (i-1>=0)     ? grid.s[((i-1)*y_size + j)*z_size + k] : false;
+                        bool s2 = (i+1<x_size) ? grid.s[((i+1)*y_size + j)*z_size + k] : false;
+                        bool s3 = (j-1>=0)     ? grid.s[(i*y_size + (j-1))*z_size + k] : false;
+                        bool s4 = (j+1<y_size) ? grid.s[(i*y_size + (j+1))*z_size + k] : false;
+                        bool s5 = (k-1>=0)     ? grid.s[(i*y_size + j)*z_size + (k-1)] : false;
+                        bool s6 = (k+1<z_size) ? grid.s[(i*y_size + j)*z_size + (k+1)] : false;
+                        int s = s1+s2+s3+s4+s5+s6;
+
+                        if (s == 0)
+                            continue;
+                        grid.vel[0][((i+0)*y_size + j)*z_size + k] += divergence * s1 / s;
+                        grid.vel[0][((i+1)*y_size + j)*z_size + k] -= divergence * s2 / s;
+                        grid.vel[1][(i*(y_size+1) + (j+0))*z_size + k] += divergence * s3 / s;
+                        grid.vel[1][(i*(y_size+1) + (j+1))*z_size + k] -= divergence * s4 / s;
+                        grid.vel[2][(i*y_size + j)*(z_size+1) + k+0] += divergence * s5 / s;
+                        grid.vel[2][(i*y_size + j)*(z_size+1) + k+1] -= divergence * s6 / s;
+                    }
+                }
+            }
         }
     }
 
@@ -628,7 +666,7 @@ class FlipFluid {
         };
 
         // d points vel
-        for(int a=0;a<atom.cnt;a++) {
+        for(int a=atom_start;a<atom_end;a++) {
             // assume cell height is 1
             float x_p = atom.pos[a*3 + 0] - offset[dim][0];
             float y_p = atom.pos[a*3 + 1] - offset[dim][1];
@@ -684,7 +722,8 @@ class FlipFluid {
         }
     }
 
-    void update() {
+    // update fluid grid and atom state using multiple threads
+    void update_multiple_threads() {
         // update atom velocity by gravity
         // update atom position by it's velocity
         // simulate particles
@@ -710,6 +749,72 @@ class FlipFluid {
 
         // add change to atoms
         transfer_velocity_to_atom();
+    }
+
+    // update fluid grid and atom state using single thread
+    void update_single_thread() {
+        // update atom velocity by gravity
+        // update atom position by it's velocity
+        // simulate particles
+        simulate_atom_partial(gravity, simulate_step, dt, 0, atom.cnt);
+
+        push_atoms_apart(min_dist, pushapart_iteration);
+
+        // update cell state
+        update_cell();
+
+        int dim_size[3][3] = {
+            {x_size+1, y_size, z_size},
+            {x_size, y_size+1, z_size},
+            {x_size, y_size, z_size+1}
+        };
+
+        // transfer atom velocity to grid
+        for(int d=0;d<3;d++) {
+            // reset grid velocity components
+            for(int i=0;i<grid.vel[d].size();i++)
+                grid.vel[d][i] = 0;
+
+            // reset r
+            for(int i=0;i<grid.r[d].size();i++)
+                grid.r[d][i] = 0;
+
+            transfer_velocity_to_grid_partial(d, 0, atom.cnt);
+
+            // normalize velocity to max 1
+            for(int i=0;i<dim_size[d][0];i++) {
+                for(int j=0;j<dim_size[d][1];j++) {
+                    for(int k=0;k<dim_size[d][2];k++) {
+                        float weight_sum = grid.r[d][(i*(y_size+1) + j)*(z_size+1) + k];
+                        if (weight_sum == 0.0)
+                            continue;
+                        grid.vel[d][(i*dim_size[d][1] + j)*dim_size[d][2] + k] /= weight_sum;
+                    }
+                }
+            }
+        }
+
+        update_density();
+
+        // save current grid velocity
+        for(int d=0;d<3;d++)
+            grid.vel[d].swap(grid.prev_vel[d]);
+        
+        // make fluid incompressible
+        // using Gauss-Seidal method
+        solve_incompressibility_single_thread(incompress_iteration, over_relaxation, stiff, rest_density);
+
+        // add change to atoms
+        for(int d=0;d<3;d++)
+            transfer_velocity_to_atom_partial(d, 0, atom.cnt);
+    }
+
+    void update() {
+        if (num_threads > 0) {
+            update_multiple_threads();
+        } else {
+            update_single_thread();
+        }
     }
 
     void print_fluid(int screen_width, int screen_height, int offset_x, int offset_y, float scale) {
