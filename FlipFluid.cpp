@@ -1,4 +1,4 @@
-#include "flip_fluid.h"
+#include "FlipFluid.h"
 
 Atom::Atom(std::vector<float> pos, std::vector<float> vel) {
     // each atom should have three position and velocity
