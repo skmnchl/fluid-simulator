@@ -3,7 +3,8 @@
 //     Install emscripten: https://emscripten.org/docs/getting_started/downloads.html
 //
 // Build:
-//     WASM : emcc -pthread main.cpp FlipFluid.cpp FluidRenderer.cpp -sINITIAL_MEMORY=64MB -sPTHREAD_POOL_SIZE=5 -sUSE_SDL=2 -sFULL_ES2=1 -o index.html --shell-file shell.html
+//     WASM(multi threading) : emcc -pthread main.cpp FlipFluid.cpp FluidRenderer.cpp -sINITIAL_MEMORY=64MB -sPTHREAD_POOL_SIZE=5 -sUSE_SDL=2 -sFULL_ES2=1 -o index.html --shell-file shell.html
+//     WASM(single threading) : emcc main.cpp FlipFluid.cpp FluidRenderer.cpp -sINITIAL_MEMORY=64MB -sUSE_SDL=2 -sFULL_ES2=1 -o index.html --shell-file shell.html
 //     Console : g++ main.cpp FlipFluid.cpp -o main
 //
 // Run:
