@@ -94,6 +94,9 @@ void FluidRendererMainLoop(void* RendererInstance)
     FlipFluid *fluid = renderer->fluid;
     int winWidth = renderer->winWidth;
     int winHeight = renderer->winHeight;
+    float &azimuthalAngle = renderer->azimuthalAngle;
+    float &polarAngle = renderer->polarAngle;
+    float &scale = renderer->scale;
     SDL_Window *pWindow = renderer->pWindow;
 
     auto updateStart = std::chrono::high_resolution_clock::now(); // start time
@@ -101,11 +104,11 @@ void FluidRendererMainLoop(void* RendererInstance)
     // update fluid status
     fluid->update();
 
+    // rotate the fluid
+    azimuthalAngle += 0.008f;
+
     auto updateEnd = std::chrono::high_resolution_clock::now(); // end time
     std::chrono::duration<double> updateDuration = updateEnd - updateStart; // compute duration
-    EM_ASM({
-        document.getElementById("update-duration").innerText = "Update duration: "+$0;
-    }, updateDuration.count());
 
 
     auto drawStart = std::chrono::high_resolution_clock::now(); // start time
@@ -120,10 +123,6 @@ void FluidRendererMainLoop(void* RendererInstance)
     // Update vertex buffer
     // Interleaved vertex position and color data
     const float PI = 3.1416; 
-    float scale = 50.0f;
-    static float azimuthalAngle = 0.0f; // PI/4
-    float polarAngle = 0.1f;
-    azimuthalAngle += 0.008f;
     // polarAngle = cos(azimuthalAngle) / 3;
     for(int a=0;a<fluid->atom.cnt;a++) {
         // calculate view projection
@@ -182,7 +181,50 @@ void FluidRendererMainLoop(void* RendererInstance)
 
     auto drawEnd = std::chrono::high_resolution_clock::now(); // end time
     std::chrono::duration<double> drawDuration = drawEnd - drawStart; // compute duration
+
+    // output renderer status
     EM_ASM({
-        document.getElementById("draw-duration").innerText = "Draw duration: "+$0;
-    }, drawDuration.count());
+        document.getElementById("update-duration").innerText = "Update duration: "+$0.toFixed(5)+"s";
+        document.getElementById("draw-duration").innerText = "Draw duration: "+$1.toFixed(5)+"s";
+        document.getElementById("azimuthal-angle").innerText = "Azimuthal Angle: "+$2.toFixed(2)+"°";
+        document.getElementById("polar-angle").innerText = "Polar Angle: "+$3.toFixed(2)+"°";
+        document.getElementById("scale").innerText = "Scale: "+$4.toFixed(2);
+    }, 
+    updateDuration.count(),
+    drawDuration.count(),
+    azimuthalAngle/PI*180,
+    polarAngle/PI*180,
+    scale
+    );
+
+    // output fluid status
+    EM_ASM({
+        document.getElementById("grid-size").innerText = "Grid Size: "+$0+" * "+$1+" * "+$2;
+        document.getElementById("num-particles").innerText = "Particle Count: "+$3;
+        document.getElementById("gravity").innerText = "Gravity: "+$4;
+        document.getElementById("dt").innerText = "dt: "+$5.toFixed(2);
+        document.getElementById("simulation-step").innerText = "Particle Simulation Step: "+$6;
+        document.getElementById("min-dist").innerText = "Particle Minum Distance: "+$7;
+        document.getElementById("push-apart-iteration").innerText = "Push Apart Iteration: "+$8;
+        document.getElementById("incompress-iteration").innerText = "Solve Incompressibility Iteration: "+$9;
+        document.getElementById("over-relaxation").innerText = "Over Relaxation: "+$10.toFixed(2);
+        document.getElementById("stiff").innerText = "Stiffness: "+$11;
+        document.getElementById("rest-density").innerText = "Rest Density: "+$12;
+        document.getElementById("num-threads").innerText = "Threads Count: "+$13;
+    },
+    fluid->xSize,
+    fluid->ySize,
+    fluid->zSize,
+    fluid->atom.cnt,
+    fluid->gravity,
+    fluid->dt,
+    fluid->simulateStep,
+    fluid->minDist,
+    fluid->pushApartIteration,
+    fluid->incompressIteration,
+    fluid->overRelaxation,
+    fluid->stiff,
+    fluid->restDensity,
+    fluid->numThreads
+    );
 }

@@ -22,6 +22,11 @@ class FluidRenderer {
     SDL_Window* pWindow;
     int winWidth;
     int winHeight;
+
+    // others
+    float azimuthalAngle = 0.0f;
+    float polarAngle = 0.1f;
+    float scale = 50.0f;
     
     FluidRenderer(FlipFluid *fluid, int winWidth, int winHeight);
 
