@@ -52,7 +52,9 @@ class FlipFluid {
     std::vector<float> density; // grid density
     std::vector<int> incompressCounter; // used for multi threading while solving incompressibility
 
-    float gravity;
+    float gravityX;
+    float gravityY;
+    float gravityZ;
     int simulateStep;
     float dt;
     float minDist;
@@ -66,7 +68,9 @@ class FlipFluid {
     FlipFluid(
         Grid grid, 
         Atom atom,
-        float gravity,
+        float gravityX,
+        float gravityY,
+        float gravityZ,
         int simulateStep,
         float dt,
         float minDist,
@@ -79,10 +83,10 @@ class FlipFluid {
 
     private:
     // simulate atoms in given range
-    void simulatePartialAtoms(float gravity, int step, float dt, int firstAtomIndex, int lastAtomIndex);
+    void simulatePartialAtoms(float gravityX, float gravityY, float gravityZ, int step, float dt, int firstAtomIndex, int lastAtomIndex);
 
     // simulate entire atoms using multi-threading    
-    void simulateAtoms(float gravity, int step, float dt);
+    void simulateAtoms(float gravityX, float gravityY, float gravityZ, int step, float dt);
 
     // efficient collision detection using spacial hash
     void pushAtomsApart(float minDist, int numIter);

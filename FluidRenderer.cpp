@@ -100,12 +100,51 @@ void FluidRendererMainLoop(void* RendererInstance)
     SDL_Window *pWindow = renderer->pWindow;
 
     auto updateStart = std::chrono::high_resolution_clock::now(); // start time
-        
+
+    // apply gravity
+    renderer->gravityMode = EM_ASM_INT({
+        if (document.getElementById('fixed-graivity-radio').checked)
+            return 0;
+        if (document.getElementById('downward-graivity-radio').checked)
+            return 1;
+        if (document.getElementById('no-graivity-radio').checked)
+            return 2;
+        return -1;
+    });
+    switch (renderer->gravityMode) {
+        case 0: {
+            fluid->gravityX = 0.0f;
+            fluid->gravityY = 50.0f;
+            fluid->gravityZ = 0.0f;
+            break;
+        }
+        case 1: {
+            fluid->gravityX = 50.0f * sin(polarAngle) * sin(azimuthalAngle);
+            fluid->gravityY = 50.0f * cos(polarAngle);
+            fluid->gravityZ = 50.0f * sin(polarAngle) * cos(azimuthalAngle);
+            break;
+        }
+        case 2: {
+            fluid->gravityX = 0.0f;
+            fluid->gravityY = 0.0f;
+            fluid->gravityZ = 0.0f;
+            break;
+        }
+        default:
+            break;
+    }
+   
     // update fluid status
-    fluid->update();
+    renderer->playSimulation = EM_ASM_INT({ return document.getElementById('play-checkbox').checked ? true : false; });
+    if (renderer->playSimulation) {
+        fluid->update();
+    }
 
     // rotate the fluid
-    azimuthalAngle += 0.008f;
+    renderer->autoRotate = EM_ASM_INT({ return document.getElementById('rotate-checkbox').checked ? true : false; });
+    if (renderer->autoRotate) {
+        azimuthalAngle += 0.008f;
+    }
 
     auto updateEnd = std::chrono::high_resolution_clock::now(); // end time
     std::chrono::duration<double> updateDuration = updateEnd - updateStart; // compute duration
@@ -189,19 +228,21 @@ void FluidRendererMainLoop(void* RendererInstance)
         document.getElementById("azimuthal-angle").innerText = "Azimuthal Angle: "+$2.toFixed(2)+"°";
         document.getElementById("polar-angle").innerText = "Polar Angle: "+$3.toFixed(2)+"°";
         document.getElementById("scale").innerText = "Scale: "+$4.toFixed(2);
+        document.getElementById("fps").innerText = "FPS: "+$5.toFixed(2);
     }, 
     updateDuration.count(),
     drawDuration.count(),
     azimuthalAngle/PI*180,
     polarAngle/PI*180,
-    scale
+    scale,
+    1/(updateDuration.count()+drawDuration.count())
     );
 
     // output fluid status
     EM_ASM({
         document.getElementById("grid-size").innerText = "Grid Size: "+$0+" * "+$1+" * "+$2;
         document.getElementById("num-particles").innerText = "Particle Count: "+$3;
-        document.getElementById("gravity").innerText = "Gravity: "+$4;
+        document.getElementById("gravity").innerText = "Gravity: "+$4.toFixed(2);
         document.getElementById("dt").innerText = "dt: "+$5.toFixed(2);
         document.getElementById("simulation-step").innerText = "Particle Simulation Step: "+$6;
         document.getElementById("min-dist").innerText = "Particle Minum Distance: "+$7;
@@ -216,7 +257,9 @@ void FluidRendererMainLoop(void* RendererInstance)
     fluid->ySize,
     fluid->zSize,
     fluid->atom.cnt,
-    fluid->gravity,
+    sqrt(fluid->gravityX*fluid->gravityX
+       + fluid->gravityY*fluid->gravityY
+       + fluid->gravityZ*fluid->gravityZ),
     fluid->dt,
     fluid->simulateStep,
     fluid->minDist,
@@ -227,4 +270,65 @@ void FluidRendererMainLoop(void* RendererInstance)
     fluid->restDensity,
     fluid->numThreads
     );
+
+    // rotate renderer based on drag event
+    const float moveScale = 0.0075f;
+    if (renderer->isMouseDown) {
+        azimuthalAngle += renderer->moveX * moveScale;
+        polarAngle -= renderer->moveY * moveScale;
+    }
+}
+
+bool FluidRendererMouseCallback(int eventType, const EmscriptenMouseEvent *e, void* RendererInstance) {
+    FluidRenderer *renderer = static_cast<FluidRenderer*>(RendererInstance);
+    if (eventType == EMSCRIPTEN_EVENT_MOUSEDOWN) {
+        renderer->isMouseDown = true;
+        renderer->mouseX = e->clientX;
+        renderer->mouseY = e->clientY;
+        return true;
+    }
+    
+    if (eventType == EMSCRIPTEN_EVENT_MOUSEUP) {
+        renderer->isMouseDown = false;
+        return true;
+    }
+
+    if (eventType == EMSCRIPTEN_EVENT_MOUSEMOVE) {
+        renderer->moveX = e->clientX - renderer->mouseX;
+        renderer->moveX = e->clientY - renderer->mouseY;
+        renderer->mouseX = e->clientX;
+        renderer->mouseY = e->clientY;
+        return true;
+    }
+
+    return false;
+}
+
+bool FluidRendererTouchCallback(int eventType, const EmscriptenTouchEvent *e, void* RendererInstance) {
+    FluidRenderer *renderer = static_cast<FluidRenderer*>(RendererInstance);
+    if (eventType == EMSCRIPTEN_EVENT_TOUCHSTART) {
+        // consider first touched point only
+        EmscriptenTouchPoint touch = e->touches[0];
+        renderer->isMouseDown = true;
+        renderer->mouseX = touch.clientX;
+        renderer->mouseY = touch.clientY;
+        return true;
+    }
+    
+    if (eventType == EMSCRIPTEN_EVENT_TOUCHEND) {
+        renderer->isMouseDown = false;
+        return true;
+    }
+
+    if (eventType == EMSCRIPTEN_EVENT_TOUCHMOVE) {
+        // consider first touched point only
+        EmscriptenTouchPoint touch = e->touches[0];
+        renderer->moveX = touch.clientX - renderer->mouseX;
+        renderer->moveY = touch.clientY - renderer->mouseY;
+        renderer->mouseX = touch.clientX;
+        renderer->mouseY = touch.clientY;
+        return true;
+    }
+
+    return false;
 }

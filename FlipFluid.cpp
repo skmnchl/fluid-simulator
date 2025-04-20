@@ -196,7 +196,9 @@ void Grid::printGridView(int screenWidth, int screenHeight, int offsetX, int off
 FlipFluid::FlipFluid(
     Grid grid, 
     Atom atom,
-    float gravity,
+    float gravityX,
+    float gravityY,
+    float gravityZ,
     int simulateStep,
     float dt,
     float minDist,
@@ -219,8 +221,9 @@ FlipFluid::FlipFluid(
     // init others
     this->density.resize(xSize * ySize * zSize);
     this->incompressCounter.resize(xSize);
-
-    this->gravity = gravity;
+    this->gravityX = gravityX;
+    this->gravityY = gravityY;
+    this->gravityZ = gravityZ;
     this->simulateStep = simulateStep;
     this->dt = dt;
     this->minDist = minDist;
@@ -233,9 +236,12 @@ FlipFluid::FlipFluid(
 }
 
 // simulate atoms in given range
-void FlipFluid::simulatePartialAtoms(float gravity, int step, float dt, int firstAtomIndex, int lastAtomIndex) {
+void FlipFluid::simulatePartialAtoms(float gravityX, float gravityY, float gravityZ, int step, float dt, int firstAtomIndex, int lastAtomIndex) {
     for(int a=firstAtomIndex;a<lastAtomIndex;a++) {
-        atom.vel[a*3 + 1] += gravity * dt; // add gravity to y direction
+        // add gravity
+        atom.vel[a*3 + 0] += gravityX * dt;
+        atom.vel[a*3 + 1] += gravityY * dt;
+        atom.vel[a*3 + 2] += gravityZ * dt;
 
         float dx = atom.vel[a*3 + 0] * dt / step;
         float dy = atom.vel[a*3 + 1] * dt / step;
@@ -287,12 +293,12 @@ void FlipFluid::simulatePartialAtoms(float gravity, int step, float dt, int firs
 }
 
 // simulate entire atoms using multi-threading    
-void FlipFluid::simulateAtoms(float gravity, int step, float dt) {
+void FlipFluid::simulateAtoms(float gravityX, float gravityY, float gravityZ, int step, float dt) {
     std::vector<std::thread> threads;
     for(int t=0;t<numThreads;t++) {
         int firstAtomIndex = atom.cnt * t / numThreads;
         int lastAtomIndex = atom.cnt * (t+1) / numThreads;
-        threads.emplace_back(&FlipFluid::simulatePartialAtoms, this, gravity, step, dt, firstAtomIndex, lastAtomIndex);
+        threads.emplace_back(&FlipFluid::simulatePartialAtoms, this, gravityX, gravityY, gravityZ, step, dt, firstAtomIndex, lastAtomIndex);
     }
 
     for (auto& t : threads) {
@@ -676,7 +682,7 @@ void FlipFluid::updateMultiThreaded() {
     // update atom velocity by gravity
     // update atom position by it's velocity
     // simulate particles
-    simulateAtoms(gravity, simulateStep, dt);
+    simulateAtoms(gravityX, gravityY, gravityZ, simulateStep, dt);
 
     pushAtomsApart(minDist, pushApartIteration);
 
@@ -705,7 +711,7 @@ void FlipFluid::updateSingleThreaded() {
     // update atom velocity by gravity
     // update atom position by it's velocity
     // simulate particles
-    simulatePartialAtoms(gravity, simulateStep, dt, 0, atom.cnt);
+    simulatePartialAtoms(gravityX, gravityY, gravityZ, simulateStep, dt, 0, atom.cnt);
 
     pushAtomsApart(minDist, pushApartIteration);
 

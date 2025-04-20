@@ -3,7 +3,8 @@
 //     Install emscripten: https://emscripten.org/docs/getting_started/downloads.html
 //
 // Build:
-//     WASM : emcc -pthread main.cpp FlipFluid.cpp FluidRenderer.cpp -sINITIAL_MEMORY=64MB -sPTHREAD_POOL_SIZE=5 -sUSE_SDL=2 -sFULL_ES2=1 -o index.html --shell-file shell.html
+//     WASM(multi threading) : emcc -pthread main.cpp FlipFluid.cpp FluidRenderer.cpp -sINITIAL_MEMORY=64MB -sPTHREAD_POOL_SIZE=5 -sUSE_SDL=2 -sFULL_ES2=1 -o index.html --shell-file shell.html
+//     WASM(single threading) : emcc main.cpp FlipFluid.cpp FluidRenderer.cpp -sINITIAL_MEMORY=64MB -sUSE_SDL=2 -sFULL_ES2=1 -o index.html --shell-file shell.html
 //     Console : g++ main.cpp FlipFluid.cpp -o main
 //
 // Run:
@@ -77,7 +78,9 @@ int main() {
     Atom atom = Atom(pos, vel);
 
     // other configs
-    float gravity = 50;
+    float gravityX = 0.0f;
+    float gravityY = 50.0f;
+    float gravityZ = 0.0f;
     int simulateStep = 5;
     float dt = 0.02;
     float minDist = 0.5;
@@ -92,7 +95,9 @@ int main() {
     FlipFluid fluid = FlipFluid(
         grid,
         atom,
-        gravity,
+        gravityX,
+        gravityY,
+        gravityZ,
         simulateStep,
         dt,
         minDist,
@@ -105,7 +110,13 @@ int main() {
     );
 
 #ifdef __EMSCRIPTEN__
-    FluidRenderer renderer = FluidRenderer(&fluid, 512, 512);
+    FluidRenderer renderer = FluidRenderer(&fluid, 768, 768);
+    emscripten_set_mousedown_callback("#canvas", &renderer, true, FluidRendererMouseCallback);
+    emscripten_set_mouseup_callback("#canvas", &renderer, true, FluidRendererMouseCallback);
+    emscripten_set_mousemove_callback("#canvas", &renderer, true, FluidRendererMouseCallback);
+    emscripten_set_touchstart_callback("#canvas", &renderer, true, FluidRendererTouchCallback);
+    emscripten_set_touchend_callback("#canvas", &renderer, true, FluidRendererTouchCallback);
+    emscripten_set_touchmove_callback("#canvas", &renderer, true, FluidRendererTouchCallback);
 
     emscripten_set_main_loop_arg(FluidRendererMainLoop, &renderer, 0, true);
 #else
