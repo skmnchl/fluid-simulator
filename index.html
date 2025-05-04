@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Fluid Simulator</title>
+  </head>
+  <body style="display: flex; justify-content: center; background-color: black; color: white">
+    <!-- Fluid Renderer -->
+    <figure style="overflow:visible;" id="spinner"><div class="spinner"></div></figure>
+    <div class="emscripten" id="status">Downloading...</div>
+    <div class="emscripten">
+      <progress value="0" max="100" id="progress" hidden=1></progress>  
+    </div>
+    <div style="width: 95%; display: flex; justify-content: space-between;">
+      <div>
+        <h4>Options:</h4>
+        <form>
+          <input type="checkbox" id="play-checkbox" name="play" checked />
+          Play Simulation
+        </form>
+        <form>
+          <input type="checkbox" id="rotate-checkbox" name="rotate" checked />
+          Auto Rotate
+        </form>
+        <form style="padding-top:0.5rem;">
+          <label>Gravity Direction</label><br>
+          <input type="radio" id="fixed-graivity-radio" name="gravity-mode" checked />
+          fixed<br>
+          <input type="radio" id="downward-graivity-radio" name="gravity-mode" />
+          downward<br>
+          <input type="radio" id="no-graivity-radio" name="gravity-mode" />
+          none
+        </form>
+        <form style="padding-top:0.5rem;">
+          <label>Render Type</label><br>
+          <input type="radio" id="render-points-radio" name="render-mode" checked />
+          particles<br>
+          <input type="radio" id="render-mesh-radio" name="render-mode" />
+          mesh
+        </form>
+        <form style="padding-top:0.5rem;">
+          <label>Coloring</label><br>
+          <input type="radio" id="coloring-depth-radio" name="coloring-mode" checked />
+          depth based<br>
+          <input type="radio" id="coloring-normal-radio" name="coloring-mode" />
+          normal vector<br>
+          <input type="radio" id="coloring-none-radio" name="coloring-mode" />
+          none
+        </form>
+      </div>
+
+      <!-- Fluid Canvas -->
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <h1 style="position: absolute;">Flip Fluid Simulator</h1>
+        <div>
+          <canvas class="emscripten" id="canvas" tabindex=-1></canvas>
+        </div>
+      </div>
+
+      <div>
+        <h4>Renderer:</h4>
+        <p style="font-size: x-small;" id="update-duration">update_duration</p>
+        <p style="font-size: x-small;" id="draw-duration">update_duration</p>
+        <p style="font-size: x-small;" id="fps">fps</p>
+        <p style="font-size: x-small;" id="azimuthal-angle">azimuthal-angle</p>
+        <p style="font-size: x-small;" id="polar-angle">polar_angle</p>
+        <p style="font-size: x-small;" id="scale">scale</p>
+  
+        <h4>Fluid:</h4>
+        <p style="font-size: x-small;" id="grid-size"></p>
+        <p style="font-size: x-small;" id="num-particles"></p>
+        <p style="font-size: x-small;" id="gravity"></p>
+        <p style="font-size: x-small;" id="dt"></p>
+        <p style="font-size: x-small;" id="simulation-step"></p>
+        <p style="font-size: x-small;" id="min-dist"></p>
+        <p style="font-size: x-small;" id="push-apart-iteration"></p>
+        <p style="font-size: x-small;" id="incompress-iteration"></p>
+        <p style="font-size: x-small;" id="over-relaxation"></p>
+        <p style="font-size: x-small;" id="stiff"></p>
+        <p style="font-size: x-small;" id="rest-density"></p>
+        <p style="font-size: x-small;" id="num-threads"></p>
+      </div>
+
+    </div>
+    <!--<div style="display: flex; flex-direction: column; align-items: center;">
+      <h1 style="position: absolute;">Flip Fluid Simulator</h1>
+      <div>
+        <canvas class="emscripten" id="canvas" tabindex=-1></canvas>
+      </div>
+    </div>-->
+
+    <script type='text/javascript'>
+      var statusElement = document.getElementById('status');
+      var progressElement = document.getElementById('progress');
+      var spinnerElement = document.getElementById('spinner');
+      var canvasElement = document.getElementById('canvas');
+      var outputElement = document.getElementById('output');
+      if (outputElement) outputElement.value = ''; // clear browser cache
+
+      // As a default initial behavior, pop up an alert when webgl context is lost. To make your
+      // application robust, you may want to override this behavior before shipping!
+      // See http://www.khronos.org/registry/webgl/specs/latest/1.0/#5.15.2
+      canvasElement.addEventListener("webglcontextlost", (e) => {
+        alert('WebGL context lost. You will need to reload the page.');
+        e.preventDefault();
+      }, false);
+
+      var Module = {
+        print(...args) {
+          // These replacements are necessary if you render to raw HTML
+          //text = text.replace(/&/g, "&amp;");
+          //text = text.replace(/</g, "&lt;");
+          //text = text.replace(/>/g, "&gt;");
+          //text = text.replace('\n', '<br>', 'g');
+          console.log(...args);
+          if (outputElement) {
+            var text = args.join(' ');
+            outputElement.value += text + "\n";
+            outputElement.scrollTop = outputElement.scrollHeight; // focus on bottom
+          }
+        },
+        canvas: canvasElement,
+        setStatus(text) {
+          Module.setStatus.last ??= { time: Date.now(), text: '' };
+          if (text === Module.setStatus.last.text) return;
+          var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+          var now = Date.now();
+          if (m && now - Module.setStatus.last.time < 30) return; // if this is a progress update, skip it if too soon
+          Module.setStatus.last.time = now;
+          Module.setStatus.last.text = text;
+          if (m) {
+            text = m[1];
+            progressElement.value = parseInt(m[2])*100;
+            progressElement.max = parseInt(m[4])*100;
+            progressElement.hidden = false;
+            spinnerElement.hidden = false;
+          } else {
+            progressElement.value = null;
+            progressElement.max = null;
+            progressElement.hidden = true;
+            if (!text) spinnerElement.hidden = true;
+          }
+          statusElement.innerHTML = text;
+        },
+        totalDependencies: 0,
+        monitorRunDependencies(left) {
+          this.totalDependencies = Math.max(this.totalDependencies, left);
+          Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies-left) + '/' + this.totalDependencies + ')' : 'All downloads complete.');
+        }
+      };
+      Module.setStatus('Downloading...');
+      window.onerror = () => {
+        Module.setStatus('Exception thrown, see JavaScript console');
+        spinnerElement.style.display = 'none';
+        Module.setStatus = (text) => {
+          if (text) console.error('[post-exception status] ' + text);
+        };
+      };
+    </script>
+    <script async type="text/javascript" src="index.js"></script>
+  </body>
+</html>
